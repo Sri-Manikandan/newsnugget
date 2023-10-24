@@ -1,17 +1,20 @@
-from langchain.chat_models import ChatOpenAI
-import json 
-from dotenv import load_dotenv
-load_dotenv()
 import requests
 from newspaper import Article
+from dotenv import load_dotenv
+from langchain.llms import OpenAI
 from langchain.schema import HumanMessage
+from langchain.output_parsers import PydanticOutputParser
+from typing import List
+from pydantic import BaseModel, Field, validator
+from langchain.prompts import PromptTemplate,FewShotPromptTemplate
 from langchain.callbacks import get_openai_callback
+load_dotenv()
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36'
 }
 
-article_url = "https://www.thehindu.com/news/international/israel-hamas-war-day-17-live-updates/article67451601.ece"
+article_url = "https://www.artificialintelligence-news.com/2022/01/25/meta-claims-new-ai-supercomputer-will-set-records/"
 
 session = requests.Session()
 
@@ -22,8 +25,6 @@ try:
         article = Article(article_url)
         article.download()
         article.parse()
-        print(article.title)
-        print(article.text)
 
     else:
         print(f"Failed to fetch article at {article_url}")
@@ -33,9 +34,30 @@ except Exception as e:
 article_title = article.title
 article_text = article.text
 
-template = """You are a very good assistant that summarizes online articles in bulleted points.
+examples = [
+    {
+        "article_title":"The Effects of Climate Change",
+        "article_text":"""
+        - Climate change is causing a rise in global temperatures.
+        - This leads to melting ice caps and rising sea levels. 
+        - Resulting in more frequent and severe weather conditions.
+        """
+    },
+    {
+        "article_title":"The Evolution of Artificial Intelligence",
+        "article_text":"""
+        - Artificial Intelligence (AI) has developed significantly over the past decade.
+        - AI is now used in multiple fields such as healthcare, finance, and transportation.
+        - The future of AI is promising but requires careful regulation.
+        """
+    },
+]
 
-Here's the article you want to summarize.
+prefix = """As an advanced AI, you've been tasked to summarize online articles into bulleted points. Here are a few examples of how you've done this in the past:
+"""
+
+suffix ="""
+Now, here's the article you need to summarize:
 
 ==================
 Title: {article_title}
@@ -43,16 +65,47 @@ Title: {article_title}
 {article_text}
 ==================
 
-Write a summary of the previous article.
+{format_instructions}
 """
 
-prompt = template.format(article_title=article_title, article_text=article_text)
+example_template = """
+Title: {article_title}
+Summary: {article_text}
+"""
 
-messages = [HumanMessage(content=prompt)]
+example_prompt = PromptTemplate(
+    template=example_template,
+    input_variables=["article_title", "article_text"],
+)
 
-chat = ChatOpenAI(model_name="gpt-4", temperature=0,n=2)
+class ArticleSummary(BaseModel):
+    title: str = Field(description="Title of the article")
+    summary: List[str] = Field(description="Summary of the article in a bulleted list format")
 
-#with get_openai_callback() as cb:
-    #summary = chat(messages)
-    #print(summary.content)
+    @validator("summary")
+    def validate_summary(cls, summary):
+        if len(summary) < 3:
+            raise ValueError("Summary must contain at least 3 bullet points")
+        return summary
+    
+parser = PydanticOutputParser(pydantic_object=ArticleSummary)
+
+few_shot_prompt_template = FewShotPromptTemplate(
+    examples=examples,
+    prefix=prefix,
+    suffix=suffix,
+    example_prompt=example_prompt,
+    input_variables=["article_title", "article_text"],
+    partial_variables={"format_instructions": parser.get_format_instructions()},
+    example_separator="\n\n"
+)
+
+model_input = few_shot_prompt_template.format_prompt(article_title=article_title, article_text=article_text)
+
+chat = OpenAI(model_name="text-davinci-003", temperature=0.0,n=2,best_of=2)
+
+with get_openai_callback() as cb:
+    summary = chat(model_input.to_string())
+    parsed_output = parser.parse(summary)
+    print(parsed_output)
     #print(cb)
