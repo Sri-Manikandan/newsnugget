@@ -2,19 +2,17 @@ import requests
 from newspaper import Article
 from dotenv import load_dotenv
 from langchain.llms import OpenAI
-from langchain.schema import HumanMessage
 from langchain.output_parsers import PydanticOutputParser
 from typing import List
 from pydantic import BaseModel, Field, validator
 from langchain.prompts import PromptTemplate,FewShotPromptTemplate
-from langchain.callbacks import get_openai_callback
 load_dotenv()
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36'
 }
 
-article_url = "https://www.artificialintelligence-news.com/2022/01/25/meta-claims-new-ai-supercomputer-will-set-records/"
+article_url = "https://www.thehindu.com/news/international/israel-hamas-war-live-updates-day-43-nov-18-2023/article67546700.ece"
 
 session = requests.Session()
 
@@ -102,10 +100,8 @@ few_shot_prompt_template = FewShotPromptTemplate(
 
 model_input = few_shot_prompt_template.format_prompt(article_title=article_title, article_text=article_text)
 
-chat = OpenAI(model_name="text-davinci-003", temperature=0.0,n=2,best_of=2)
+chat = OpenAI(model_name="text-davinci-003", temperature=0)
 
-with get_openai_callback() as cb:
-    summary = chat(model_input.to_string())
-    parsed_output = parser.parse(summary)
-    print(parsed_output)
-    #print(cb)
+summary = chat(model_input.to_string())
+parsed_output = parser.parse(summary)
+print(parsed_output.summary)
